@@ -1,6 +1,6 @@
 import struct
 from collections import namedtuple
-import numpy as np
+from prueba import matlib
 
 from math import cos, sin, tan, pi
 
@@ -49,6 +49,7 @@ def baryCoords(A, B, C, P):
 
 class Renderer(object):
     def __init__(self, width, height):
+        self.lib = matlib()
 
         self.width = width
         self.height = height
@@ -89,43 +90,43 @@ class Renderer(object):
         self.vpWidth = width
         self.vpHeight = height
 
-        self.viewportMatrix = np.array([[width/2,0,0,posX+width/2],
-                                         [0,height/2,0,posY+height/2],
-                                         [0,0,0.5,0.5],
-                                         [0,0,0,1]])
+        self.viewportMatrix = [[width/2,0,0,posX+width/2],
+                            [0,height/2,0,posY+height/2],
+                            [0,0,0.5,0.5],
+                            [0,0,0,1]]
 
         self.glProjectionMatrix()
 
     def glViewMatrix(self, translate = V3(0,0,0), rotate = V3(0,0,0)):
         self.camMatrix = self.glCreateObjectMatrix(translate, rotate)
-        self.viewMatrix = np.linalg.inv(self.camMatrix)
+        self.viewMatrix = self.lib.getMatrixInverse(self.camMatrix)
 
     def glLookAt(self, eye, camPosition = V3(0,0,0)):
-        forward = np.subtract(camPosition, eye)
-        forward = forward / np.linalg.norm(forward)
+        forward = self.lib.Substract(camPosition, eye)
+        forward = forward /self.lib.norm(forward)
 
-        right = np.cross(V3(0,1,0), forward)
-        right = right / np.linalg.norm(right)
+        right = self.lib.cross(V3(0,1,0), forward)
+        right = right /self.lib.norm(right)
 
-        up = np.cross(forward, right)
-        up = up / np.linalg.norm(up)
+        up = self.lib.cross(forward, right)
+        up = up / self.lib.norm(up)
 
-        self.camMatrix = np.array([[right[0],up[0],forward[0],camPosition[0]],
-                                    [right[1],up[1],forward[1],camPosition[1]],
-                                    [right[2],up[2],forward[2],camPosition[2]],
-                                    [0,0,0,1]])
+        self.camMatrix = [[right[0],up[0],forward[0],camPosition[0]],
+                        [right[1],up[1],forward[1],camPosition[1]],
+                        [right[2],up[2],forward[2],camPosition[2]],
+                        [0,0,0,1]]
 
-        self.viewMatrix = np.linalg.inv(self.camMatrix)
+        self.viewMatrix = self.lib.getMatrixInverse(self.camMatrix)
 
     def glProjectionMatrix(self, n = 0.1, f = 1000, fov = 60):
         aspectRatio = self.vpWidth / self.vpHeight
         t = tan( (fov * pi / 180) / 2) * n
         r = t * aspectRatio
 
-        self.projectionMatrix = np.array([[n/r,0,0,0],
-                                           [0,n/t,0,0],
-                                           [0,0,-(f+n)/(f-n),-(2*f*n)/(f-n)],
-                                           [0,0,-1,0]])
+        self.projectionMatrix = [[n/r,0,0,0],
+                                [0,n/t,0,0],
+                                [0,0,-(f+n)/(f-n),-(2*f*n)/(f-n)],
+                                [0,0,-1,0]]
 
 
 
@@ -171,67 +172,60 @@ class Renderer(object):
         yaw   *= pi/180
         roll  *= pi/180
 
-        pitchMat = np.array([[1, 0, 0, 0],
-                              [0, cos(pitch),-sin(pitch), 0],
-                              [0, sin(pitch), cos(pitch), 0],
-                              [0, 0, 0, 1]])
+        pitchMat =  [[1, 0, 0, 0],
+                    [0, cos(pitch),-sin(pitch), 0],
+                    [0, sin(pitch), cos(pitch), 0],
+                    [0, 0, 0, 1]]
 
-        yawMat = np.array([[cos(yaw), 0, sin(yaw), 0],
-                            [0, 1, 0, 0],
-                            [-sin(yaw), 0, cos(yaw), 0],
-                            [0, 0, 0, 1]])
+        yawMat = [[cos(yaw), 0, sin(yaw), 0],
+                [0, 1, 0, 0],
+                [-sin(yaw), 0, cos(yaw), 0],
+                [0, 0, 0, 1]]
 
-        rollMat = np.array([[cos(roll),-sin(roll), 0, 0],
-                             [sin(roll), cos(roll), 0, 0],
-                             [0, 0, 1, 0],
-                             [0, 0, 0, 1]])
-        print(" ")
-        print("Create Rotation matrix")
-        print(pitchMat)
-        print(yawMat)
-        print(rollMat)
-        print(pitchMat*yawMat)
-        print(pitchMat * yawMat * rollMat)
+        rollMat =       [[cos(roll),-sin(roll), 0, 0],
+                        [sin(roll), cos(roll), 0, 0],
+                        [0, 0, 1, 0],
+                        [0, 0, 0, 1]]
+        
+        res1 = self.lib.Product(pitchMat,yawMat)
+        res2 = self.lib.Product(res1,rollMat)
 
-        return pitchMat * yawMat * rollMat
+
+        return res2
 
 
     def glCreateObjectMatrix(self, translate = V3(0,0,0), rotate = V3(0,0,0), scale = V3(1,1,1)):
-        print(rotate)
-        translation = np.array([[1, 0, 0, translate.x],
-                                 [0, 1, 0, translate.y],
-                                 [0, 0, 1, translate.z],
-                                 [0, 0, 0, 1]])
+
+        translation = [[1, 0, 0, translate.x],
+                        [0, 1, 0, translate.y],
+                        [0, 0, 1, translate.z],
+                        [0, 0, 0, 1]]
 
         rotation = self.glCreateRotationMatrix(rotate.x, rotate.y, rotate.z)
 
-        scaleMat = np.array([[scale.x, 0, 0, 0],
-                              [0, scale.y, 0, 0],
-                              [0, 0, scale.z, 0],
-                              [0, 0, 0, 1]])
-        print(" ")
-        print("glCreateObject Matrix")
-        print(translation * rotation * scaleMat)
+        scaleMat = [[scale.x, 0, 0, 0],
+                    [0, scale.y, 0, 0],
+                    [0, 0, scale.z, 0],
+                    [0, 0, 0, 1]]
+        
+        res1 = self.lib.Product(translation, rotation)
+        res2 = self.lib.Product(res1, scaleMat)
 
-        return translation * rotation * scaleMat
+
+        return res2
 
     def glTransform(self, vertex, matrix):
         v = V4(vertex[0], vertex[1], vertex[2], 1)
-        vt = matrix @ v
-        print(vt)
-        vt = vt.tolist()[0]
-
+        vt =  self.lib.matmul(matrix, v)
         vf = V3(vt[0] / vt[3],
                 vt[1] / vt[3],
                 vt[2] / vt[3])
-        print(vf)
 
         return vf
 
     def glDirTransform(self, dirVector, rotMatrix):
         v = V4(dirVector[0], dirVector[1], dirVector[2], 0)
-        vt = rotMatrix @ v
-        vt = vt.tolist()[0]
+        vt = self.lib.matmul(rotMatrix, v)
         vf = V3(vt[0],
                 vt[1],
                 vt[2])
@@ -240,11 +234,16 @@ class Renderer(object):
 
     def glCamTransform(self, vertex):
         v = V4(vertex[0], vertex[1], vertex[2], 1)
-        vt = self.viewportMatrix @ self.projectionMatrix @ self.viewMatrix @ v
-        vt = vt.tolist()[0]
+
+
+        
+        res1 = self.lib.matmul(self.viewportMatrix,self.projectionMatrix)
+        res2 = self.lib.matmul(res1, self.viewMatrix)
+        vt = self.lib.matmul(res2, v)
         vf = V3(vt[0] / vt[3],
                 vt[1] / vt[3],
                 vt[2] / vt[3])
+        
 
         return vf
 
@@ -268,6 +267,7 @@ class Renderer(object):
             A = self.glCamTransform(v0)
             B = self.glCamTransform(v1)
             C = self.glCamTransform(v2)
+            
 
             vt0 = model.texcoords[face[0][1] - 1]
             vt1 = model.texcoords[face[1][1] - 1]
@@ -421,30 +421,28 @@ class Renderer(object):
         minY = round(min(A.y, B.y, C.y))
         maxX = round(max(A.x, B.x, C.x))
         maxY = round(max(A.y, B.y, C.y))
-        print("\nbounding box")
-        print(minX)
-        print(minY)
-        print(maxX)
-        print(maxY)
 
 
-        edge1 = np.subtract(verts[1], verts[0])
-        edge2 = np.subtract(verts[2], verts[0])
+        edge1 = self.lib.Substract(verts[1], verts[0])
+        edge2 = self.lib.Substract(verts[2], verts[0])
 
-        triangleNormal = np.cross( edge1, edge2)
-        triangleNormal = triangleNormal / np.linalg.norm(triangleNormal)
+        triangleNormal = self.lib.cross( edge1, edge2)
+        triangleNormal = self.lib.scalarDiv(triangleNormal , self.lib.norm(triangleNormal))
 
-        deltaUV1 = np.subtract(texCoords[1], texCoords[0])
-        deltaUV2 = np.subtract(texCoords[2], texCoords[0])
-        f = 1 / (deltaUV1[0]* deltaUV2[1] - deltaUV2[0] * deltaUV1[1])
+        deltaUV1 = self.lib.Substract(texCoords[1], texCoords[0])
+        deltaUV2 = self.lib.Substract(texCoords[2], texCoords[0])
+        try:
+            f = 1 / (deltaUV1[0]* deltaUV2[1] - deltaUV2[0] * deltaUV1[1])
+        except:
+            f = 1
 
         tangent = [f * (deltaUV2[1] * edge1[0] - deltaUV1[1] * edge2[0]),
                    f * (deltaUV2[1] * edge1[1] - deltaUV1[1] * edge2[1]),
                    f * (deltaUV2[1] * edge1[2] - deltaUV1[1] * edge2[2])]
-        tangent = tangent / np.linalg.norm(tangent)
+        tangent = self.lib.scalarDiv(tangent , self.lib.norm(tangent))
 
-        bitangent = np.cross(triangleNormal, tangent)
-        bitangent = bitangent / np.linalg.norm(bitangent)
+        bitangent = self.lib.cross(triangleNormal, tangent)
+        bitangent = self.lib.scalarDiv(bitangent, self.lib.norm(bitangent))
 
         for x in range(minX, maxX + 1):
             for y in range(minY, maxY + 1):
@@ -507,44 +505,6 @@ class Renderer(object):
 
 
 
-''' def mul(A, B): # np.multiply || a*b Vector3
-    return [sum(a*b for a,b in zip(C,B)) for C in A] 
 
 
-a = np.matrix([[ -1, 0,  0,  0],
-                [ 0,  1, 0,  0,],
-                [ 0,  0,  1,  0],
-                [ 0,  0,  2,  1.]])
-b = np.matrix([[ 1, 2,  3,  4],
-                [ 5,  6, 7,  8,],
-                [ 9,  10,  11,  12],
-                [ 13,  14,  15,  16]])
 
-a1 = [[ -1, 0,  0,  0],
-                [ 0,  1, 0,  0,],
-                [ 0,  0,  1,  0],
-                [ 0,  0,  2,  1.]]
-b1 = [[ 1, 2,  3,  4],
-                [ 5,  6, 7,  8,],
-                [ 9,  10,  11,  12],
-                [ 13,  14,  15,  16]]
-
-def multiply_matrix(matrix1, matrix2):
-    matrix = [
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-        [0,0,0,0],
-    ]
-    for i in range(4):
-        for j in range(4):
-            for k in range(4):
-                matrix[i][j] += np.float64(matrix1[i][k] * matrix2[k][j])
-            
-    return matrix
-
-res = list(zip(*[mul(b1,x) for x in a1]))
-print(a*b)
-print(np.multiply(a,b))
-
-print(multiply_matrix(a1,b1)) '''

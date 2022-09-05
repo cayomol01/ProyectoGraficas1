@@ -64,6 +64,9 @@ class Renderer(object):
         self.active_shader = None
         self.active_texture = None
         self.active_texture2 = None
+        self.normal_map = None
+        
+        self.background = None
 
         self.dirLight = V3(0,0,-1)
 
@@ -71,6 +74,19 @@ class Renderer(object):
         self.glViewport(0,0,self.width, self.height)
         
         self.glClear()
+    
+    def glClearBackground(self):
+        if self.background:
+            for x in range(self.vpX, self.vpX + self.vpWidth + 1):
+                for y in range(self.vpY, self.vpY + self.vpHeight + 1):
+
+                    tU = (x - self.vpX) / self.vpWidth
+                    tV = (y - self.vpY) / self.vpHeight
+
+                    texColor = self.background.getColor(tU, tV)
+
+                    if texColor:
+                        self.glPoint(x,y, color(texColor[0], texColor[1], texColor[2]))
 
     def glViewport(self, posX, posY, width, height):
         self.vpX = posX
@@ -79,32 +95,32 @@ class Renderer(object):
         self.vpHeight = height
 
         self.viewportMatrix = [[width/2,0,0,posX+width/2],
-                                         [0,height/2,0,posY+height/2],
-                                         [0,0,0.5,0.5],
-                                         [0,0,0,1]]
+                                [0,height/2,0,posY+height/2],
+                                [0,0,0.5,0.5],
+                                [0,0,0,1]]
 
         self.glProjectionMatrix()
 
     def glViewMatrix(self, translate = V3(0,0,0), rotate = V3(0,0,0)):
         self.camMatrix = self.glCreateObjectMatrix(translate, rotate)
-        self.viewMatrix = np.linalg.inv(self.camMatrix)
+        self.viewMatrix = self.lib.getMatrixInverse(self.camMatrix)
 
     def glLookAt(self, eye, camPosition = V3(0,0,0)):
         forward = self.lib.subtract(camPosition, eye)
-        forward = forward / np.linalg.norm(forward)
+        forward = forward / self.lib.norm(forward)
 
         right = self.lib.cross(V3(0,1,0), forward)
-        right = right / np.linalg.norm(right)
+        right = right / self.lib.norm(right)
 
         up = self.lib.cross(forward, right)
-        up = up / np.linalg.norm(up)
+        up = up /self.lib.norm(up)
 
         self.camMatrix = [[right[0],up[0],forward[0],camPosition[0]],
-                                    [right[1],up[1],forward[1],camPosition[1]],
-                                    [right[2],up[2],forward[2],camPosition[2]],
-                                    [0,0,0,1]]
+                        [right[1],up[1],forward[1],camPosition[1]],
+                        [right[2],up[2],forward[2],camPosition[2]],
+                        [0,0,0,1]]
 
-        self.viewMatrix = np.linalg.inv(self.camMatrix)
+        self.viewMatrix = self.lib.getMatrixInverse(self.camMatrix)
 
     def glProjectionMatrix(self, n = 0.1, f = 1000, fov = 60):
         aspectRatio = self.vpWidth / self.vpHeight
@@ -112,9 +128,9 @@ class Renderer(object):
         r = t * aspectRatio
 
         self.projectionMatrix = [[n/r,0,0,0],
-                                           [0,n/t,0,0],
-                                           [0,0,-(f+n)/(f-n),-(2*f*n)/(f-n)],
-                                           [0,0,-1,0]]
+                                [0,n/t,0,0],
+                                [0,0,-(f+n)/(f-n),-(2*f*n)/(f-n)],
+                                [0,0,-1,0]]
 
 
 
@@ -126,10 +142,10 @@ class Renderer(object):
 
     def glClear(self):
         self.pixels = [[ self.clearColor for y in range(self.height)]
-                         for x in range(self.width)]
+                        for x in range(self.width)]
 
         self.zbuffer = [[ float('inf') for y in range(self.height)]
-                          for x in range(self.width)]
+                        for x in range(self.width)]
 
     def glClearViewport(self, clr = None):
         for x in range(self.vpX, self.vpX + self.vpWidth):
@@ -194,7 +210,7 @@ class Renderer(object):
                               [0, 0, scale.z, 0],
                               [0, 0, 0, 1]]
         
-        resul1 = self.lib.Product(translation*rotation)
+        resul1 = self.lib.Product(translation,rotation)
         resul2 = self.lib.Product(resul1, scaleMat)
 
         return resul2
@@ -202,7 +218,6 @@ class Renderer(object):
     def glTransform(self, vertex, matrix):
         v = V4(vertex[0], vertex[1], vertex[2], 1)
         vt = self.lib.matmul(matrix, v)
-        vt = vt.tolist()[0]
         vf = V3(vt[0] / vt[3],
                 vt[1] / vt[3],
                 vt[2] / vt[3])
@@ -211,8 +226,7 @@ class Renderer(object):
 
     def glDirTransform(self, dirVector, rotMatrix):
         v = V4(dirVector[0], dirVector[1], dirVector[2], 0)
-        vt = self.lib(rotMatrix,v)
-        vt = vt[0]
+        vt = self.lib.matmul(rotMatrix,v)
         vf = V3(vt[0],
                 vt[1],
                 vt[2])
@@ -224,7 +238,6 @@ class Renderer(object):
         vt1 = self.lib.matmul(self.viewportMatrix,self.projectionMatrix)
         vt2 = self.lib.matmul(vt1, self.viewMatrix)
         vt = self.lib.matmul(vt2,v)
-        vt = vt[0]
         vf = V3(vt[0] / vt[3],
                 vt[1] / vt[3],
                 vt[2] / vt[3])
@@ -236,6 +249,7 @@ class Renderer(object):
         model = Obj(filename)
         modelMatrix = self.glCreateObjectMatrix(translate, rotate, scale)
         rotationMatrix = self.glCreateRotationMatrix(rotate[0], rotate[1], rotate[2])
+        count = 1
 
         for face in model.faces:
             vertCount = len(face)
@@ -247,10 +261,12 @@ class Renderer(object):
             v0 = self.glTransform(v0, modelMatrix)
             v1 = self.glTransform(v1, modelMatrix)
             v2 = self.glTransform(v2, modelMatrix)
+            print("Transform complete")
 
             A = self.glCamTransform(v0)
             B = self.glCamTransform(v1)
             C = self.glCamTransform(v2)
+            print("cam Transform complete")
 
             vt0 = model.texcoords[face[0][1] - 1]
             vt1 = model.texcoords[face[1][1] - 1]
@@ -262,24 +278,37 @@ class Renderer(object):
             vn0 = self.glDirTransform(vn0, rotationMatrix)
             vn1 = self.glDirTransform(vn1, rotationMatrix)
             vn2 = self.glDirTransform(vn2, rotationMatrix)
+            print("Dir transform complete")
 
             self.glTriangle_bc(A, B, C,
                                verts = (v0, v1, v2),
                                texCoords = (vt0, vt1, vt2),
                                normals = (vn0, vn1, vn2))
+            print("glTriangleBc done")
+            print(" ")
 
             if vertCount == 4:
                 v3 = model.vertices[ face[3][0] - 1]
                 v3 = self.glTransform(v3, modelMatrix)
+                print("v4 -> Tranasform done")
                 D = self.glCamTransform(v3)
+                print("v4 -> Cam Tranasform done")
+                
                 vt3 = model.texcoords[face[3][1] - 1]
                 vn3 = model.normals[face[3][2] - 1]
                 vn3 = self.glDirTransform(vn3, rotationMatrix)
+                print("v4 -> Dir Tranasform done")
+                
 
                 self.glTriangle_bc(A, C, D,
                                    verts = (v0, v2, v3),
                                    texCoords = (vt0, vt2, vt3),
                                    normals = (vn0, vn2, vn3))
+                print("v4 -> glTriangleBc done")
+                print(" ")
+            print("for loop ", count, " terminado")
+            count +=1
+                
 
 
 
@@ -404,10 +433,13 @@ class Renderer(object):
         minY = round(min(A.y, B.y, C.y))
         maxX = round(max(A.x, B.x, C.x))
         maxY = round(max(A.y, B.y, C.y))
-
-        triangleNormal = self.lib.cross( self.lib.Substract(verts[1], verts[0]), self.lib.Substract(verts[2],verts[0]))
+        triangleNormal = self.lib.cross( self.lib.Substract(list(verts[1]), list(verts[0])), self.lib.Substract(list(verts[2]),list(verts[0])))
+        print("\t\tTriangle normal done")
         # normalizar
-        triangleNormal = triangleNormal / np.linalg.norm(triangleNormal)
+        triangleNormal = self.lib.scalarDiv(triangleNormal, self.lib.norm(triangleNormal))
+        print("\t\tTriangle normal -> scalar div done")
+        count1 = 0
+        count2 = 0
 
 
         for x in range(minX, maxX + 1):
@@ -415,26 +447,31 @@ class Renderer(object):
                 u, v, w = baryCoords(A, B, C, V2(x, y))
 
                 if 0<=u and 0<=v and 0<=w:
-
                     z = A.z * u + B.z * v + C.z * w
 
                     if 0<=x<self.width and 0<=y<self.height:
+                        print("if 2")
                         if z < self.zbuffer[x][y] and -1<=z<= 1:
                             self.zbuffer[x][y] = z
+                            print("if 3")
 
                             if self.active_shader:
+                                print("if 4")
                                 r, g, b = self.active_shader(self,
                                                              baryCoords=(u,v,w),
                                                              vColor = clr or self.currColor,
                                                              texCoords = texCoords,
                                                              normals = normals,
                                                              triangleNormal = triangleNormal)
+                                print("\t\tActive shader done")
 
 
 
                                 self.glPoint(x, y, color(r,g,b))
                             else:
                                 self.glPoint(x,y, clr)
+            print("for loop x terminado : ", count2, " veces")
+            count2 +=1 
 
 
 
